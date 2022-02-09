@@ -13,16 +13,17 @@ Created on Mon Feb  7 09:32:49 2022
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
+#from mpl_toolkits import mplot3d
 from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+#from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import sys
 import cv2   
 import time
+import os
 
 PIXELS_FOR_MM =603
 #PIXELS_FOR_MM =100 #check
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 
 def converToRGBVal(x):
     #converts values between 0-1529 to RGB color code
@@ -123,71 +124,73 @@ def createAndSaveBirdViews(xyz,filename,z_minimum):
     
     print('Computing ',filename,': ',(time.time() - start_time),' seconds')
     
-    cv2.imwrite(filename+'_bird_view.png', img)
-    cv2.imwrite(filename+'_hmap_zmin'+str(z_minimum)+'_zrange'+str(scan_depth)+'.png', img_hmap)
+    cv2.imwrite('./computed_images/'+filename+'_bird_view.png', img)
+    cv2.imwrite('./computed_images/'+filename+'_hmap_zmin'+str(z_minimum)+'_zrange'+str(scan_depth)+'.png', img_hmap)
 
 
 
 
 ########### MAIN ##################################
 
-filename='test_al_2'
-point_cloud=loadPointClud(filename+'.ply')
+dirs = os.listdir('./3d_models')
 
-xyz=point_cloud[:,:3]
-rgb=point_cloud[:,3:]
-
-if SHOW_PLOTS:
-    ax = plt.axes(projection='3d')
-    ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2], c = rgb/255, s=0.01)
-    plt.title('Cloud point before crop - 3D view')
-    plt.show()
-    
-    plt.figure()
-    plt.plot(xyz[:,1],xyz[:,2])
-    plt.title('Cloud point before crop - XY view')
-    plt.show()
-
-spatial_query=point_cloud[point_cloud[:,2]>-0.01]
-xyz=spatial_query[:,:3]
-rgb=spatial_query[:,3:]
-
-xyz[:,0]=xyz[:,0]-np.min(xyz[:,0]) #moving cloud to (0,0)
-xyz[:,1]=xyz[:,1]-np.min(xyz[:,1]) #moving cloud to (0,0)
-z_minimum=np.min(xyz[:,2])
-xyz[:,2]=xyz[:,2]-z_minimum   #moving cloud to (0,0)
-
-
-if SHOW_PLOTS:
-    plt.figure()
-    plt.plot(xyz[:,1],xyz[:,2])
-    plt.title('Cloud point after crop - XY view')
-    plt.show()
-
-    z_max=np.max(xyz[:,2]) #for height deviation plot
-    z_min=np.min(xyz[:,2])
-    z_range=z_max-z_min
-    
-    cmap = cm.get_cmap('nipy_spectral')
-    rgb_dev=list()
-    rgb_dev=cmap(((xyz[:,2]-z_min)/z_range))
-    
-    plt.figure()
-    plt.scatter(xyz[:,0], xyz[:,1], c = rgb_dev)
-    plt.title('Cloud point height dev - bird view')
-    plt.axis('scaled')
-    plt.show()
-    
-    plt.figure()
-    plt.scatter(xyz[:,0], xyz[:,1], c = rgb/255, s=0.1)
-    plt.axis('scaled')
-    plt.title('Cloud point RGB - bird view')
-    plt.show()
-
-
-
-createAndSaveBirdViews(xyz,filename,z_minimum)
-
-
-sys.exit()
-
+for filename in dirs:
+    if ".ply" in filename:       
+        filename=filename[0:-4] #deleting extension
+        print(filename)
+        
+        point_cloud=loadPointClud('./3d_models/'+filename+'.ply')
+        
+        xyz=point_cloud[:,:3]
+        rgb=point_cloud[:,3:]
+        
+        if SHOW_PLOTS:
+            ax = plt.axes(projection='3d')
+            ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2], c = rgb/255, s=0.01)
+            plt.title(filename + ': Cloud point before crop - 3D view')
+            plt.show()
+            
+            plt.figure()
+            plt.plot(xyz[:,1],xyz[:,2])
+            plt.title(filename + ': Cloud point before crop - XY view')
+            plt.show()
+        
+        spatial_query=point_cloud[point_cloud[:,2]>-0.009]
+        xyz=spatial_query[:,:3]
+        rgb=spatial_query[:,3:]
+        
+        xyz[:,0]=xyz[:,0]-np.min(xyz[:,0]) #moving cloud to (0,0)
+        xyz[:,1]=xyz[:,1]-np.min(xyz[:,1]) #moving cloud to (0,0)
+        z_minimum=np.min(xyz[:,2])
+        xyz[:,2]=xyz[:,2]-z_minimum   #moving cloud to (0,0)
+        
+        
+        if SHOW_PLOTS:
+            plt.figure()
+            plt.plot(xyz[:,1],xyz[:,2])
+            plt.title(filename + ': Cloud point after crop - XY view')
+            plt.show()
+        
+            z_max=np.max(xyz[:,2]) #for height deviation plot
+            z_min=np.min(xyz[:,2])
+            z_range=z_max-z_min
+            
+            cmap = cm.get_cmap('nipy_spectral')
+            rgb_dev=list()
+            rgb_dev=cmap(((xyz[:,2]-z_min)/z_range))
+            
+            plt.figure()
+            plt.scatter(xyz[:,0], xyz[:,1], c = rgb_dev)
+            plt.title(filename + ': Cloud point height dev - bird view')
+            plt.axis('scaled')
+            plt.show()
+            
+            plt.figure()
+            plt.scatter(xyz[:,0], xyz[:,1], c = rgb/255, s=0.1)
+            plt.axis('scaled')
+            plt.title(filename + ': Cloud point RGB - bird view')
+            plt.show()
+        
+        
+        
+        #createAndSaveBirdViews(xyz,filename,z_minimum)

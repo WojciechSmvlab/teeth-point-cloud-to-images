@@ -1,2 +1,4 @@
 *.png
 *.ply
+3d_models/
+computed_images/
