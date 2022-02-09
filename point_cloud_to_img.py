@@ -1,71 +1,191 @@
 # -*- coding: utf-8 -*-
 """
+Convert .ply file to 2 RGB images:
+    bird view
+    height map
+    
 Created on Mon Feb  7 09:32:49 2022
 
-@author: mvlab
+@author: Wojciech Szelag
 """
-
-#libraries used
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
-
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+import sys
+import cv2   
+import time
+
+PIXELS_FOR_MM =603
+#PIXELS_FOR_MM =100 #check
+SHOW_PLOTS = False
+
+def converToRGBVal(x):
+    #converts values between 0-1529 to RGB color code
+    #maximum value is 1529
+    conversion_step=int(x/255)
+    
+    if conversion_step==0:
+        r=x
+        g=0
+        b=0
+    elif conversion_step==1:
+        r=255
+        g=x-255
+        b=0        
+    elif conversion_step==2:
+        r=255
+        g=255
+        b=x-(conversion_step*255)
+    elif conversion_step==3:
+        r=255-(x-(conversion_step*255))
+        g=255
+        b=255
+    elif conversion_step==4:
+        r=0
+        g=255-(x-(conversion_step*255))
+        b=255        
+    elif conversion_step==5:
+        r=0
+        g=0
+        b=255-(x-(conversion_step*255))
+    elif conversion_step<0 or conversion_step>5:
+        r=0
+        g=0
+        b=0
+        print('converToRGBVal: out of range!',x)
+        
+    #print('r:',r,' g:',g,' b:',b)
+    color=(r,g,b)
+    return color
+
+def loadPointClud(file_path):
+    file=open(file_path,'r')
+    for line in file.readlines():
+        if 'element vertex' in line:
+            break
+    file.close()
+    row_amount=int(line[15:]) #gets amount of rows from header of .ply file
+    
+    point_cloud= np.loadtxt(file_path,skiprows=13,max_rows=row_amount)
+    
+    return point_cloud
+
+def createAndSaveBirdViews(xyz,filename,z_minimum):
+#filename without extenstion
+    scan_width=np.max(xyz[:,0])-np.min(xyz[:,0]) #x axis
+    scan_height=np.max(xyz[:,1])-np.min(xyz[:,1]) #y axis
+
+    img_width=int(PIXELS_FOR_MM*scan_width)
+    img_height=int(PIXELS_FOR_MM*scan_height)
 
 
-#actual code to load,slice and display the point cloud
-file_data_path="test_al_2.ply"
-point_cloud= np.loadtxt(file_data_path,skiprows=13,max_rows=632782-13-1)
+    scan_depth=np.max(xyz[:,2])-np.min(xyz[:,2]) #z axis
 
-mean_Z=np.mean(point_cloud,axis=0)[2]
-spatial_query=point_cloud[abs( point_cloud[:,2]-mean_Z)<1]
-xyz=spatial_query[:,:3]
-rgb=spatial_query[:,3:]
+    img = np.zeros((img_height,img_width,3), np.uint8)
+    img_hmap = np.zeros((img_height,img_width,3), np.uint8)
+
+    print('Images computing for: ',filename)
+    start_time = time.time()
+
+    for x in range(img_width):  
+        if (x/img_width)%0.025 < 0.01:
+            print(int((x/img_width)*100),'%') #progress info  
+        for y in range(img_height):
+            x_mm_coord=x/PIXELS_FOR_MM
+            y_mm_coord=(img_height-1-y)/PIXELS_FOR_MM #avoiding flipped image
+            
+            idx=np.argmin((xyz[:,0]-x_mm_coord)**2+(xyz[:,1]-y_mm_coord)**2) #searching for closest 3D point
+    
+            distance=(xyz[idx,0]-x_mm_coord)**2+(xyz[idx,1]-y_mm_coord)**2 #computing square of distance
+          
+            if(distance<0.0002): #if distance>threshold - blue/black pixel
+                img[y,x,0]=rgb[idx][2]
+                img[y,x,1]=rgb[idx][1]
+                img[y,x,2]=rgb[idx][0]
+                
+                h_color=converToRGBVal((xyz[idx,2]/scan_depth)*1529)
+                img_hmap[y,x,0]=h_color[2]
+                img_hmap[y,x,1]=h_color[1]
+                img_hmap[y,x,2]=h_color[0]
+            else:
+                img[y,x,0]=255
+                img[y,x,1]=0
+                img[y,x,2]=0      
+    
+                img_hmap[y,x,0]=0
+                img_hmap[y,x,1]=0
+                img_hmap[y,x,2]=0
+    
+    print('Computing ',filename,': ',(time.time() - start_time),' seconds')
+    
+    cv2.imwrite(filename+'_bird_view.png', img)
+    cv2.imwrite(filename+'_hmap_zmin'+str(z_minimum)+'_zrange'+str(scan_depth)+'.png', img_hmap)
+
+
+
+
+########### MAIN ##################################
+
+filename='test_al_2'
+point_cloud=loadPointClud(filename+'.ply')
 
 xyz=point_cloud[:,:3]
 rgb=point_cloud[:,3:]
 
-ax = plt.axes(projection='3d')
-ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2], c = rgb/255, s=0.01)
-plt.show()
-
-plt.figure()
-plt.scatter(xyz[:,0], xyz[:,1], c = rgb/255)
-plt.show()
-
-plt.figure()
-plt.plot(xyz[:,1],xyz[:,2])
-plt.show()
+if SHOW_PLOTS:
+    ax = plt.axes(projection='3d')
+    ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2], c = rgb/255, s=0.01)
+    plt.title('Cloud point before crop - 3D view')
+    plt.show()
+    
+    plt.figure()
+    plt.plot(xyz[:,1],xyz[:,2])
+    plt.title('Cloud point before crop - XY view')
+    plt.show()
 
 spatial_query=point_cloud[point_cloud[:,2]>-0.01]
 xyz=spatial_query[:,:3]
 rgb=spatial_query[:,3:]
 
-plt.figure()
-plt.plot(xyz[:,1],xyz[:,2])
-plt.show()
+xyz[:,0]=xyz[:,0]-np.min(xyz[:,0]) #moving cloud to (0,0)
+xyz[:,1]=xyz[:,1]-np.min(xyz[:,1]) #moving cloud to (0,0)
+z_minimum=np.min(xyz[:,2])
+xyz[:,2]=xyz[:,2]-z_minimum   #moving cloud to (0,0)
+
+
+if SHOW_PLOTS:
+    plt.figure()
+    plt.plot(xyz[:,1],xyz[:,2])
+    plt.title('Cloud point after crop - XY view')
+    plt.show()
+
+    z_max=np.max(xyz[:,2]) #for height deviation plot
+    z_min=np.min(xyz[:,2])
+    z_range=z_max-z_min
+    
+    cmap = cm.get_cmap('nipy_spectral')
+    rgb_dev=list()
+    rgb_dev=cmap(((xyz[:,2]-z_min)/z_range))
+    
+    plt.figure()
+    plt.scatter(xyz[:,0], xyz[:,1], c = rgb_dev)
+    plt.title('Cloud point height dev - bird view')
+    plt.axis('scaled')
+    plt.show()
+    
+    plt.figure()
+    plt.scatter(xyz[:,0], xyz[:,1], c = rgb/255, s=0.1)
+    plt.axis('scaled')
+    plt.title('Cloud point RGB - bird view')
+    plt.show()
 
 
 
-cmap = cm.get_cmap('inferno')
-cmap = cm.get_cmap('nipy_spectral')
+createAndSaveBirdViews(xyz,filename,z_minimum)
 
-z_height_dev=xyz[:,2]
 
-z_max=np.max(z_height_dev)
-z_min=np.min(z_height_dev)
-z_range=z_max-z_min
+sys.exit()
 
-rgb_dev=list()
-rgb_dev=cmap(((z_height_dev-z_min)/z_range))
-
-plt.figure()
-plt.scatter(xyz[:,0], xyz[:,1], c = rgb_dev)
-plt.show()
-
-plt.figure()
-plt.scatter(xyz[:,0], xyz[:,1], c = rgb/255, s=0.1)
-plt.show()
-
-#ciekawa biblio https://github.com/marcomusy/vedo
+#interesting for 3d clouds https://github.com/marcomusy/vedo
