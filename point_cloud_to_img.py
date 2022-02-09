@@ -7,6 +7,9 @@ Convert .ply file to 2 RGB images:
 Created on Mon Feb  7 09:32:49 2022
 
 @author: Wojciech Szelag
+
+
+#interesting for 3d clouds https://github.com/marcomusy/vedo
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -188,4 +191,3 @@ createAndSaveBirdViews(xyz,filename,z_minimum)
 
 sys.exit()
 
-#interesting for 3d clouds https://github.com/marcomusy/vedo
