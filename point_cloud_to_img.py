@@ -23,7 +23,7 @@ import os
 
 PIXELS_FOR_MM =603
 #PIXELS_FOR_MM =100 #check
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 
 def converToRGBVal(x):
     #converts values between 0-1529 to RGB color code
@@ -193,4 +193,4 @@ for filename in dirs:
         
         
         
-        #createAndSaveBirdViews(xyz,filename,z_minimum)
+        createAndSaveBirdViews(xyz,filename,z_minimum)
