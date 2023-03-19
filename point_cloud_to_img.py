@@ -1,196 +1,97 @@
-# -*- coding: utf-8 -*-
 """
-Convert .ply file to 2 RGB images:
-    bird view
-    height map
-    
-Created on Mon Feb  7 09:32:49 2022
-
-@author: Wojciech Szelag
-
-
-#interesting for 3d clouds https://github.com/marcomusy/vedo
+Convert .ply files into 2D RGB .png images
 """
 import numpy as np
-import matplotlib.pyplot as plt
-#from mpl_toolkits import mplot3d
-from matplotlib import cm
-#from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import sys
-import cv2   
+import cv2  as cv
 import time
 import os
 
-PIXELS_FOR_MM =603
-#PIXELS_FOR_MM =100 #check
-SHOW_PLOTS = False
+PIXELS_TO_MM = 603
 
 def converToRGBVal(x):
     #converts values between 0-1529 to RGB color code
     #maximum value is 1529
-    conversion_step=int(x/255)
+    conversionStep = int(x//255)
     
-    if conversion_step==0:
-        r=x
-        g=0
-        b=0
-    elif conversion_step==1:
-        r=255
-        g=x-255
-        b=0        
-    elif conversion_step==2:
-        r=255
-        g=255
-        b=x-(conversion_step*255)
-    elif conversion_step==3:
-        r=255-(x-(conversion_step*255))
-        g=255
-        b=255
-    elif conversion_step==4:
-        r=0
-        g=255-(x-(conversion_step*255))
-        b=255        
-    elif conversion_step==5:
-        r=0
-        g=0
-        b=255-(x-(conversion_step*255))
-    elif conversion_step<0 or conversion_step>5:
-        r=0
-        g=0
-        b=0
+    if conversionStep == 0:
+        return [x,0,0]
+    elif conversionStep == 1:
+        return [255, x-255, 0]        
+    elif conversionStep == 2:
+        return [255, 255, x-(conversionStep*255)]
+    elif conversionStep == 3:
+        return [255-(x-(conversionStep*255)), 255, 255]
+    elif conversionStep == 4:
+        return [0, 255-(x-(conversionStep*255)), 255]        
+    elif conversionStep == 5:
+        return [0, 0, 255-(x-(conversionStep*255))]
+    elif conversionStep < 0 or conversionStep > 5:
         print('converToRGBVal: out of range!',x)
+        return [0, 0, 0]
         
-    #print('r:',r,' g:',g,' b:',b)
-    color=(r,g,b)
-    return color
 
 def loadPointClud(file_path):
-    file=open(file_path,'r')
-    for line in file.readlines():
-        if 'element vertex' in line:
-            break
-    file.close()
-    row_amount=int(line[15:]) #gets amount of rows from header of .ply file
-    
-    point_cloud= np.loadtxt(file_path,skiprows=13,max_rows=row_amount)
-    
-    return point_cloud
+    with open(file_path,'r') as file:
+        for line in file.readlines():
+            if 'element vertex' in line: break
+        file.close()
+    row_amount = int(line[15:]) #gets amount of rows from header of .ply file    
+    return np.loadtxt(file_path,skiprows=13,max_rows=row_amount)
 
-def createAndSaveBirdViews(xyz,filename,z_minimum):
-#filename without extenstion
-    scan_width=np.max(xyz[:,0])-np.min(xyz[:,0]) #x axis
-    scan_height=np.max(xyz[:,1])-np.min(xyz[:,1]) #y axis
+def createAndSaveBirdViews(XYZcords, RGBvals, filename):
+    # filename without extenstion
+    ScanWidth = np.max(XYZcords[:,0]) - np.min(XYZcords[:,0]) # x axis
+    ScanHeight = np.max(XYZcords[:,1]) - np.min(XYZcords[:,1]) # y axis
+    ScanDepth = np.max(XYZcords[:,2])-np.min(XYZcords[:,2]) # z axis
 
-    img_width=int(PIXELS_FOR_MM*scan_width)
-    img_height=int(PIXELS_FOR_MM*scan_height)
+    ImgWidth = int(ScanWidth*PIXELS_TO_MM)
+    ImgHeight = int(ScanHeight*PIXELS_TO_MM)
 
+    Img, ImgHMap = np.zeros((ImgHeight,ImgWidth,3), dtype=np.uint8), np.zeros((ImgHeight,ImgWidth,3), dtype=np.uint8)
 
-    scan_depth=np.max(xyz[:,2])-np.min(xyz[:,2]) #z axis
+    print(f"Processing: {filename}")
+    TimeStart = time.time()
 
-    img = np.zeros((img_height,img_width,3), np.uint8)
-    img_hmap = np.zeros((img_height,img_width,3), np.uint8)
-
-    print('Images computing for: ',filename)
-    start_time = time.time()
-
-    for x in range(img_width):  
-        if (x/img_width)%0.025 < 0.01:
-            print(int((x/img_width)*100),'%') #progress info  
-        for y in range(img_height):
-            x_mm_coord=x/PIXELS_FOR_MM
-            y_mm_coord=(img_height-1-y)/PIXELS_FOR_MM #avoiding flipped image
+    for x in range(ImgWidth):  
+        for y in range(ImgHeight):
+            x_mm_coord = x/PIXELS_TO_MM
+            y_mm_coord = (ImgHeight-1-y)/PIXELS_TO_MM #avoiding flipped image
             
-            idx=np.argmin((xyz[:,0]-x_mm_coord)**2+(xyz[:,1]-y_mm_coord)**2) #searching for closest 3D point
-    
-            distance=(xyz[idx,0]-x_mm_coord)**2+(xyz[idx,1]-y_mm_coord)**2 #computing square of distance
+            distance = (XYZcords[:,0]-x_mm_coord)**2+(XYZcords[:,1]-y_mm_coord)**2 #computing square of distance
+            idx = np.argmin(distance) #searching for closest 3D point
+            distance = distance[idx]
           
             if(distance<0.0002): #if distance>threshold - blue/black pixel
-                img[y,x,0]=rgb[idx][2]
-                img[y,x,1]=rgb[idx][1]
-                img[y,x,2]=rgb[idx][0]
-                
-                h_color=converToRGBVal((xyz[idx,2]/scan_depth)*1529)
-                img_hmap[y,x,0]=h_color[2]
-                img_hmap[y,x,1]=h_color[1]
-                img_hmap[y,x,2]=h_color[0]
+                Img[y,x,:] = RGBvals[idx][:]
+                ImgHMap[y,x,:] = converToRGBVal((XYZcords[idx,2]/ScanDepth)*1529)
             else:
-                img[y,x,0]=255
-                img[y,x,1]=0
-                img[y,x,2]=0      
+                Img[y,x,:] = [0,0,255]
+                ImgHMap[y,x,:] = [0,0,0]
     
-                img_hmap[y,x,0]=0
-                img_hmap[y,x,1]=0
-                img_hmap[y,x,2]=0
+    print(f"{filename} processed in {float(time.time() - TimeStart)} s")
+
+    Img, ImgHMap = cv.cvtColor(Img, cv.COLOR_RGB2BGR), cv.cvtColor(ImgHMap, cv.COLOR_RGB2BGR)
     
-    print('Computing ',filename,': ',(time.time() - start_time),' seconds')
-    
-    cv2.imwrite('./computed_images/'+filename+'_bird_view.png', img)
-    cv2.imwrite('./computed_images/'+filename+'_hmap_zmin'+str(z_minimum)+'_zrange'+str(scan_depth)+'.png', img_hmap)
-
-
-
+    return Img, ImgHMap
 
 ########### MAIN ##################################
 
-dirs = os.listdir('./3d_models')
+for filename in os.listdir('./3d_models'):
+    if not filename.lower().endswith(".ply"): continue     
+    filename = filename.lower().split('.')[0] #deleting extension
+        
+    PointCloud = loadPointClud(f'./3d_models/{filename}.ply')
+        
+    SpatialQuery = PointCloud[PointCloud[:,2]>-0.009]
+    PointXYZCoords = SpatialQuery[:,:3]
+    PointRGBVals = SpatialQuery[:,3:]
 
-for filename in dirs:
-    if ".ply" in filename:       
-        filename=filename[0:-4] #deleting extension
-        print(filename)
+    #moving cloud to (0,0,0)   
+    PointXYZCoords[:,0] = PointXYZCoords[:,0]-np.min(PointXYZCoords[:,0]) 
+    PointXYZCoords[:,1] = PointXYZCoords[:,1]-np.min(PointXYZCoords[:,1])
+    PointXYZCoords[:,2] = PointXYZCoords[:,2]-np.min(PointXYZCoords[:,2])
         
-        point_cloud=loadPointClud('./3d_models/'+filename+'.ply')
-        
-        xyz=point_cloud[:,:3]
-        rgb=point_cloud[:,3:]
-        
-        if SHOW_PLOTS:
-            ax = plt.axes(projection='3d')
-            ax.scatter(xyz[:,0], xyz[:,1], xyz[:,2], c = rgb/255, s=0.01)
-            plt.title(filename + ': Cloud point before crop - 3D view')
-            plt.show()
-            
-            plt.figure()
-            plt.plot(xyz[:,1],xyz[:,2])
-            plt.title(filename + ': Cloud point before crop - XY view')
-            plt.show()
-        
-        spatial_query=point_cloud[point_cloud[:,2]>-0.009]
-        xyz=spatial_query[:,:3]
-        rgb=spatial_query[:,3:]
-        
-        xyz[:,0]=xyz[:,0]-np.min(xyz[:,0]) #moving cloud to (0,0)
-        xyz[:,1]=xyz[:,1]-np.min(xyz[:,1]) #moving cloud to (0,0)
-        z_minimum=np.min(xyz[:,2])
-        xyz[:,2]=xyz[:,2]-z_minimum   #moving cloud to (0,0)
-        
-        
-        if SHOW_PLOTS:
-            plt.figure()
-            plt.plot(xyz[:,1],xyz[:,2])
-            plt.title(filename + ': Cloud point after crop - XY view')
-            plt.show()
-        
-            z_max=np.max(xyz[:,2]) #for height deviation plot
-            z_min=np.min(xyz[:,2])
-            z_range=z_max-z_min
-            
-            cmap = cm.get_cmap('nipy_spectral')
-            rgb_dev=list()
-            rgb_dev=cmap(((xyz[:,2]-z_min)/z_range))
-            
-            plt.figure()
-            plt.scatter(xyz[:,0], xyz[:,1], c = rgb_dev)
-            plt.title(filename + ': Cloud point height dev - bird view')
-            plt.axis('scaled')
-            plt.show()
-            
-            plt.figure()
-            plt.scatter(xyz[:,0], xyz[:,1], c = rgb/255, s=0.1)
-            plt.axis('scaled')
-            plt.title(filename + ': Cloud point RGB - bird view')
-            plt.show()
-        
-        
-        
-        createAndSaveBirdViews(xyz,filename,z_minimum)
+    Img, ImgHMap = createAndSaveBirdViews(PointXYZCoords,PointRGBVals,filename)
+
+    cv.imwrite(f'./computed_images/{filename}_bird_view.png', Img)
+    cv.imwrite(f'./computed_images/{filename}_hmap.png', ImgHMap)
